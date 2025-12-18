@@ -1,3 +1,11 @@
+from typing import Callable, List
+import unittest
+import math
+from scipy.stats import norm
+import numpy as np
+
+
+
 # Sample space is the set of integers from 0 to sample_space_size - 1
 
 # Define the size of the sample space
@@ -5,10 +13,6 @@ sample_space_size = 10  # You can change this number
 terminal_time=10
 
 
-from typing import Callable, List
-import unittest
-import math
-from scipy.stats import norm
 
 # Random Variable Abstract Data Type
 class RandomVariable:
@@ -25,7 +29,6 @@ class RandomVariable:
         return [self.func(o) for o in space]
 
 # Procedure: normally distributed random variable
-import numpy as np
 
 def normally_distributed_random_variable(mean: float, variance: float) -> RandomVariable:
     """Return a RandomVariable representing a normally distributed real value.
