@@ -7,6 +7,8 @@ terminal_time=10
 
 from typing import Callable, List
 import unittest
+import math
+
 
 # Random Variable Abstract Data Type
 class RandomVariable:
@@ -55,6 +57,38 @@ class ProbabilityMeasure:
 
     def probabilities(self, space: List[int]) -> List[float]:
         return [self.probability(o) for o in space]
+
+def create_risk_neutral_measure(mu: float, sigma: float, r: float) -> ProbabilityMeasure:
+    """
+    Create a risk-neutral probability measure using Girsanov's theorem.
+
+    Inputs:
+    - mu: drift of the underlying
+    - sigma: volatility
+    - r: risk-free interest rate
+
+    Returns:
+    - ProbabilityMeasure instance representing the risk-neutral measure
+    """
+    global terminal_time, sample_space_size
+
+    # Create Wiener random variable with mean 0 and variance terminal_time
+    wiener_rv = normally_distributed_random_variable(0.0, terminal_time)
+
+    # Market price of risk
+    theta = (mu - r) / sigma
+
+    # Define the risk-neutral probability function
+    def p_star(omega: int) -> float:
+        return (1 / sample_space_size) * math.exp(
+            -theta * wiener_rv.evaluate(omega)
+            - 0.5 * theta**2 * terminal_time
+        )
+
+    return ProbabilityMeasure(p_star)
+
+
+
 
 # Expectation function
 def expectation(rv: RandomVariable, pm: ProbabilityMeasure) -> float:
@@ -118,14 +152,54 @@ class TestExpectation(unittest.TestCase):
         self.assertAlmostEqual(expectation(rv, pm), expected)
 
 
+class TestRiskNeutralMeasure(unittest.TestCase):
+    def test_probabilities_non_negative(self):
+        """All risk-neutral probabilities should be non-negative."""
+        mu = 0.1
+        sigma = 0.2
+        r = 0.05
+
+        pm_star = create_risk_neutral_measure(mu, sigma, r)
+        probs = pm_star.probabilities(list(range(sample_space_size)))
+
+        for p in probs:
+            self.assertGreaterEqual(p, 0.0)
+
+    def test_approximate_normalization(self):
+        """Sum of probabilities should be approximately 1 (discrete approximation)."""
+        mu = 0.1
+        sigma = 0.3
+        r = 0.05
+
+        pm_star = create_risk_neutral_measure(mu, sigma, r)
+        total_mass = sum(pm_star.probabilities(list(range(sample_space_size))))
+
+        # In a finite discrete approximation, allow a loose tolerance
+        self.assertAlmostEqual(total_mass, 1.0, delta=0.5)
+
+    def test_zero_market_price_of_risk(self):
+        """If mu == r, the risk-neutral measure should reduce to the uniform measure."""
+        mu = 0.05
+        r = 0.05
+        sigma = 0.2
+
+        pm_star = create_risk_neutral_measure(mu, sigma, r)
+        uniform = 1 / sample_space_size
+
+        probs = pm_star.probabilities(list(range(sample_space_size)))
+        for p in probs:
+            self.assertAlmostEqual(p, uniform, delta=1e-6)
+
+
 # To ensure unittest discovers the tests in interactive/run environments
 def run_tests():
     suite1 = unittest.TestLoader().loadTestsFromTestCase(TestRandomVariable)
     suite2 = unittest.TestLoader().loadTestsFromTestCase(TestProbabilityMeasure)
     suite3 = unittest.TestLoader().loadTestsFromTestCase(TestExpectation)
     suite4 = unittest.TestLoader().loadTestsFromTestCase(TestNormalRandomVariable)
+    suite5 = unittest.TestLoader().loadTestsFromTestCase(TestRiskNeutralMeasure)
 
-    all_tests = unittest.TestSuite([suite1,suite2,suite3,suite4])
+    all_tests = unittest.TestSuite([suite1,suite2,suite3,suite4,suite5])
     unittest.TextTestRunner(verbosity=2).run(all_tests)
 
 # Run tests only if script is executed directly
