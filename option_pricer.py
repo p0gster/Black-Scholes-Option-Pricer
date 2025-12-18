@@ -8,7 +8,7 @@ terminal_time=10
 from typing import Callable, List
 import unittest
 import math
-
+from scipy.stats import norm
 
 # Random Variable Abstract Data Type
 class RandomVariable:
@@ -96,6 +96,62 @@ def expectation(rv: RandomVariable, pm: ProbabilityMeasure) -> float:
     Computed as the sum over the sample space of rv(outcome) * pm(outcome).
     """
     return sum(rv.evaluate(o) * pm.probability(o) for o in range(0,sample_space_size))
+
+
+def price_option(payoff: RandomVariable,
+                 mu: float,
+                 sigma: float,
+                 r: float) -> float:
+    """
+    Price an option at time 0 using risk-neutral valuation.
+
+    The option price is the expectation, under the risk-neutral
+    probability measure, of the discounted payoff.
+
+    Inputs:
+    - payoff: RandomVariable representing the payoff at terminal time T
+    - mu: drift of the underlying
+    - sigma: volatility
+    - r: risk-free interest rate
+
+    Returns:
+    - Option price at time 0
+    """
+    # Construct the risk-neutral probability measure
+    pm_star = create_risk_neutral_measure(mu, sigma, r)
+
+    # Discounted expectation under the risk-neutral measure
+    discounted_expectation = math.exp(-r * terminal_time) * expectation(payoff, pm_star)
+
+    return discounted_expectation
+
+
+def european_call_payoff_rv(S0: float, mu: float, sigma: float, K: float) -> RandomVariable:
+    """
+    Create a RandomVariable representing the payoff of a European call option at terminal time.
+
+    Payoff: (S_T - K)+
+    where S_T = S0 * exp((mu - 0.5*sigma^2)*T + sigma*W_T)
+
+    Inputs:
+    - S0: initial stock price
+    - mu: drift of the underlying
+    - sigma: volatility
+    - K: strike price
+
+    Returns:
+    - RandomVariable representing the call option payoff at T
+    """
+    # Wiener process at terminal time T
+    W_T = normally_distributed_random_variable(0.0, terminal_time)
+
+    # Define the payoff function
+    def payoff(omega: int) -> float:
+        S_T = S0 * math.exp((mu - 0.5 * sigma**2) * terminal_time + sigma * W_T.evaluate(omega))
+        return max(S_T - K, 0.0)
+
+    return RandomVariable(payoff)
+
 
 
 
@@ -191,6 +247,30 @@ class TestRiskNeutralMeasure(unittest.TestCase):
             self.assertAlmostEqual(p, uniform, delta=1e-6)
 
 
+class TestOptionPricing(unittest.TestCase):
+    def test_monte_carlo_vs_black_scholes(self):
+        # Parameters
+        S0 = 100.0
+        K = 100.0
+        mu = 0.05
+        sigma = 0.2
+        r = 0.05
+        T = terminal_time  # Use the same terminal_time as in your Monte Carlo code
+
+        # Monte Carlo price using your RandomVariable approach
+        payoff_rv = european_call_payoff_rv(S0, mu, sigma, K)
+        monte_carlo_price = price_option(payoff_rv, mu, sigma, r)
+
+        # Analytical Black-Scholes price
+        d1 = (math.log(S0 / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        analytical_price = S0 * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+
+        # Allow some tolerance due to small sample space
+        tolerance = 5.0  # increase tolerance if sample_space_size is small
+        self.assertAlmostEqual(monte_carlo_price, analytical_price, delta=tolerance)
+
+
 # To ensure unittest discovers the tests in interactive/run environments
 def run_tests():
     suite1 = unittest.TestLoader().loadTestsFromTestCase(TestRandomVariable)
@@ -198,8 +278,9 @@ def run_tests():
     suite3 = unittest.TestLoader().loadTestsFromTestCase(TestExpectation)
     suite4 = unittest.TestLoader().loadTestsFromTestCase(TestNormalRandomVariable)
     suite5 = unittest.TestLoader().loadTestsFromTestCase(TestRiskNeutralMeasure)
+    suite6 = unittest.TestLoader().loadTestsFromTestCase(TestOptionPricing)
 
-    all_tests = unittest.TestSuite([suite1,suite2,suite3,suite4,suite5])
+    all_tests = unittest.TestSuite([suite1,suite2,suite3,suite4,suite5,suite6])
     unittest.TextTestRunner(verbosity=2).run(all_tests)
 
 # Run tests only if script is executed directly
